@@ -1,124 +1,126 @@
 <template>
 	<div>
-		<div v-if="login">
-			<p>You : {{ user.name }}</p>
-			<hr>
 
+		<div>
+			<b>{{ auth.email }}</b><hr>
+			<b>User online : </b>
 			<div>
-				<b>User online : </b>
-				<div>
-					<p v-for="user in usersOnline">
-						<i @click="onMessage(user)" style="cursor: pointer;">
-							{{ user.name }}
-						</i>
-					</p>
-				</div>
+				<p v-for="user in usersOnline">
+					<i style="cursor: pointer;" @click="roomChat(user)">
+						{{ user.email }}
+					</i>
+				</p>
 			</div>
-
-			<hr>
-			<div v-if="sendTo">
-				<b>Send to : {{ sendTo.name }}</b>
-				<div id="messages" style="height: 150px; overflow: auto;">
-					<p v-for="message in messages"><i>{{ message.sender.name }} : </i>{{ message.sender.message }}</p>
-				</div>
-				<input type="text" v-model="user.message" @keyup.enter="sendMessage()">
-			</div>
-			
 		</div>
 
-		<div v-else>
-			<input 
-				type="text" 
-				v-model="user.name" 
-				placeholder="Enter name.."
-				@keyup.enter="onLogin()">
+		<div v-if="receiver.user">
+			<b>Send to : {{ receiver.user.email }}</b>
+			<div id="messages" style="height: 150px; overflow: auto;">
+				<p v-for="msg in messages">
+					<i>{{ msg.sender }} : </i>{{ msg.message }}
+				</p>
+			</div>
+			<input type="text" v-model="message" @keyup.enter="sendMessage()">
 		</div>
 
 	</div>
 </template>
 
 <script>
-
-	import io from 'socket.io-client';
-
-	let thisSocket = io('localhost:3001');
-
 	export default {
 	  	name: 'ChatRoom',
+	  	props: {
+	  		auth: {
+	  			type 	: Object,
+      			default : null
+	  		}
+	  	},
 	  	data () {
 	    	return {
-	    		login : false,
-	    		user : {
-	    			id 		: null,
-	    			name 	: '',
-	    			message : ''
+	    		users : [],
+
+	    		receiver : {
+	    			user : null,
+	    			room : null
 	    		},
-	    		users 		: [],
-	    		sendTo 		: null,
-	    		messages 	: []
+	    		message  : '',
+	    		messages : []
 	    	}
 	  	},
 	  	computed: {
 	  		usersOnline()
 	  		{
-	  			if(!this.user.id) return [];
-
-	  			return this.users.filter(userOn => userOn.id != this.user.id);
+	  			return this.users.filter(userOn => userOn.id != this.auth.id);
 	  		}
 	  	},
 	  	mounted() {
-
+	  		this.onUsers();
+	  		this.listenerUsers();
 	    },
 	  	methods: {
-	  		sendMessage()
+	  		onUsers()
 	  		{	
-	  			const data = {
-	  				sender 		: this.user,
-	  				receiver 	: this.sendTo
-	  			}
-
-	  			thisSocket.emit('message', data);
-
-	            this.user.message = '';
+	  			const auth = {...this.auth, ...{socket_id: this.$socket.id}};
+	  			this.$socket.emit('onlineUsers', auth);
 	  		},
-	  		onMessage(sendTo)
+	  		listenerUsers()
 	  		{
-	  			if(this.sendTo)
-	  				this.offMessage();
-
-	  			this.messages 	= [];
-	  			this.sendTo 	= sendTo;
-
-	  			thisSocket.on('message-'+this.sendTo.id, (data) => {
-		            this.messages.push(data);
-		            this.scrollTop();
+	  			this.$socket.on('onlineUsers', (users) => {
+		            this.users = users;
+		            this.checkOnUser();
 		        });
+	  		},
+	  		checkOnUser()
+	  		{
+	  			if (typeof this.users.find(userOn => userOn.id == this.auth.id) === 'undefined') 
+		    	{
+					// relogin
+					this.onUsers();
+				}
+	  		},
+	  		roomChat(receiver)
+	  		{	
+	  			this.offMessage();
 
-		        thisSocket.on('message-'+this.user.id, (data) => {
-		            this.messages.push(data);
+	  			this.receiver.user  = receiver;
+	  			this.receiver.room	= this.getRoomId(this.auth.id, receiver.id);
+
+	  			this.listenerMessages();
+	  		},
+	  		getRoomId(id1, id2)
+	  		{
+	  			return id1 < id2 ? id1+'-'+id2 : id2+'-'+id1;
+	  		},
+	  		sendMessage()
+	  		{
+	  			if(this.message == '') return;
+
+	  			this.$socket.emit('chat-message', {
+	  				room 		: this.receiver.room,
+	  				message 	: this.message,
+	  				sender		: this.auth.email
+	  			});
+	  			
+	  			this.message = '';
+	  		},
+	  		listenerMessages()
+	  		{
+	  			// first trigger
+	  			this.$socket.emit('chat-message', {
+	  				room 		: this.receiver.room,
+	  				message 	: null
+	  			});
+
+	  			// listen
+	  			this.$socket.on('chat-message-'+ this.receiver.room, (data) => {
+		            this.messages = data;
 		            this.scrollTop();
 		        });
 	  		},
 	  		offMessage()
 	  		{
-	  			thisSocket.removeListener('message-' + this.sendTo.id);
-	  		},
-	  		onUsers()
-	  		{	
-	  			this.user.id = thisSocket.id;
-
-	  			thisSocket.emit('onlineUsers', this.user);
-	  			thisSocket.on('onlineUsers', (data) => {
-		            this.users = data;
-		            this.login = true;
-		        });
-	  		},
-	  		onLogin()
-	  		{
-	  			if(this.user.name == '')
-	  				return
-
-	  			this.onUsers();
+	  			if(this.receiver.room)
+	  				this.$socket.removeListener('chat-message-'+ this.receiver.room);
 	  		},
 	  		scrollTop()
 	  		{

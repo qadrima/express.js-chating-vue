@@ -1,8 +1,5 @@
 <template>
 	<div>
-		<pre>
-			{{user}}
-		</pre>
 		<input 
 			type="email" 
 			v-model="form.email" 
@@ -20,7 +17,6 @@
 	    		form: {
 	    			email: ''
 	    		},
-	    		user: null,
 	    		rootLogin : null
 	    	}
 	  	},
@@ -50,7 +46,7 @@
 	  		onLogin()
 	  		{
 	  			this.$socket.on(this.rootLogin, (data) => {
-		            this.user = data;
+		            this.$eventHub.$emit('logged-in', data);
 		        });
 	  		}
 	  	}
