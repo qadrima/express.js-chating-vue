@@ -20,7 +20,19 @@
 					<i>{{ msg.sender }} : </i>{{ msg.message }}
 				</p>
 			</div>
-			<input type="text" v-model="message" @keyup.enter="sendMessage()">
+
+			<input 
+				v-if="loadingRoom"
+				type="text"
+				value="Loading.." 
+				disabled>
+
+			<input 
+				v-else
+				type="text" 
+				v-model="message" 
+				@keyup.enter="sendMessage()">
+
 		</div>
 
 	</div>
@@ -44,7 +56,9 @@
 	    			room : null
 	    		},
 	    		message  : '',
-	    		messages : []
+	    		messages : [],
+
+	    		loadingRoom : false
 	    	}
 	  	},
 	  	computed: {
@@ -85,7 +99,12 @@
 	  			this.receiver.user  = receiver;
 	  			this.receiver.room	= this.getRoomId(this.auth.id, receiver.id);
 
-	  			this.listenerMessages();
+	  			this.$socket.emit('chat-message-create-room', {
+	  				room : this.receiver.room
+	  			}, () => {
+	  				// console.log('room ready');
+	  				this.listenerMessages();
+	  			});
 	  		},
 	  		getRoomId(id1, id2)
 	  		{
